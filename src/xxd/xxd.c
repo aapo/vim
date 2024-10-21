@@ -565,28 +565,10 @@ xxdline(FILE *fp, char *l, char *r, int nz)
 	zero_seen = 0;
     }
 
-if (nz != -1){
-  fputs_or_die("  ", fp);
-}
-
-  if (!nz && zero_seen == 1)
-    strcpy(z, r);
-
-  if (nz || !zero_seen++)
+  if (zero_seen < 2)
     {
-      if (nz)
-	{
-	  if (nz < 0)
-	    zero_seen--;
-	  if (zero_seen == 2)
-	    fputs_or_die(z, fp);
-	  if (zero_seen > 2)
-	    fputs_or_die("*\n", fp);
-	}
-      if (nz >= 0 || zero_seen > 0)
-	fputs_or_die(r, fp);
-      if (nz)
-	zero_seen = 0;
+    fputs_or_die("  ", fp);
+    fputs_or_die(r, fp);
     }
 }
 
