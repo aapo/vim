@@ -237,11 +237,25 @@ l[c++] = '1'; \
 l[c++] = ';'; \
 l[c++] = '3';
 
+#define COLOR_PROLOGUE_2 \
+r[d++] = '\033'; \
+r[d++] = '['; \
+r[d++] = '1'; \
+r[d++] = ';'; \
+r[d++] = '3';
+
 #define COLOR_EPILOGUE \
 l[c++] = '\033'; \
 l[c++] = '['; \
 l[c++] = '0'; \
 l[c++] = 'm';
+
+#define COLOR_EPILOGUE_2 \
+r[d++] = '\033'; \
+r[d++] = '['; \
+r[d++] = '0'; \
+r[d++] = 'm';
+
 #define COLOR_RED '1'
 #define COLOR_GREEN '2'
 #define COLOR_YELLOW '3'
@@ -526,7 +540,7 @@ huntype(
  * If nz is always positive, lines are never suppressed.
  */
   static void
-xxdline(FILE *fp, char *l, int nz)
+xxdline(FILE *fp, char *l, char *r, int nz)
 {
   static char z[LLEN+1];
   static int zero_seen = 0;
@@ -547,6 +561,30 @@ xxdline(FILE *fp, char *l, int nz)
 	}
       if (nz >= 0 || zero_seen > 0)
 	fputs_or_die(l, fp);
+      if (nz)
+	zero_seen = 0;
+    }
+
+if (nz != -1){
+  fputs_or_die("  ", fp);
+}
+
+  if (!nz && zero_seen == 1)
+    strcpy(z, r);
+
+  if (nz || !zero_seen++)
+    {
+      if (nz)
+	{
+	  if (nz < 0)
+	    zero_seen--;
+	  if (zero_seen == 2)
+	    fputs_or_die(z, fp);
+	  if (zero_seen > 2)
+	    fputs_or_die("*\n", fp);
+	}
+      if (nz >= 0 || zero_seen > 0)
+	fputs_or_die(r, fp);
       if (nz)
 	zero_seen = 0;
     }
@@ -652,7 +690,7 @@ enable_color(void)
 main(int argc, char *argv[])
 {
   FILE *fp, *fpo;
-  int c, e, p = 0, relseek = 1, negseek = 0, revert = 0, i, x;
+  int c, d, e, p = 0, relseek = 1, negseek = 0, revert = 0, i, x;
   int cols = 0, colsgiven = 0, nonzero = 0, autoskip = 0, hextype = HEX_NORMAL;
   int capitalize = 0, decimal_offset = 0;
   int ebcdic = 0;
@@ -661,6 +699,7 @@ main(int argc, char *argv[])
   long length = -1, n = 0, seekoff = 0;
   unsigned long displayoff = 0;
   static char l[LLEN+1];  /* static because it may be too big for stack */
+  static char r[LLEN+1];  /* static because it may be too big for stack */
   char *pp;
   char *varname = NULL;
   int addrlen = 9;
@@ -1071,9 +1110,12 @@ main(int argc, char *argv[])
 				  ((unsigned long)(n + seekoff + displayoff)));
 	  for (c = addrlen; c < LLEN; l[c++] = ' ')
 	    ;
+	  d = 0;
 	}
       x = hextype == HEX_LITTLEENDIAN ? p ^ (octspergrp-1) : p;
       c = addrlen + 1 + (grplen * x) / octspergrp;
+
+      //hex-column
       if (hextype == HEX_NORMAL || hextype == HEX_LITTLEENDIAN)
 	{
           if (color)
@@ -1086,8 +1128,8 @@ main(int argc, char *argv[])
 	    }
           else /*No colors*/
 	    {
-	      l[c]   = hexx[(e >> 4) & 0xf];
-	      l[++c] = hexx[e & 0xf];
+	      l[c++] = hexx[(e >> 4) & 0xf];
+	      l[c++] = hexx[e & 0xf];
 	    }
 	}
       else /* hextype == HEX_BITS */
@@ -1095,46 +1137,41 @@ main(int argc, char *argv[])
 	  for (i = 7; i >= 0; i--)
 	    l[c++] = (e & (1 << i)) ? '1' : '0';
 	}
+
+      //human-readable-column
       if (e)
 	nonzero++;
+
       /* When changing this update definition of LLEN above. */
       if (hextype == HEX_LITTLEENDIAN)
+      {
 	/* last group will be fully used, round up */
 	c = grplen * ((cols + octspergrp - 1) / octspergrp);
-      else
-	c = (grplen * cols - 1) / octspergrp;
+	c += addrlen;
+      }
 
       if (color)
         {
-          if (hextype == HEX_BITS)
-            c += addrlen + 3 + p*12;
-          else
-            c = addrlen + 3 + (grplen * cols - 1)/octspergrp + p*12;
-
-          COLOR_PROLOGUE
-          begin_coloring_char(l,&c,e,ebcdic);
+          COLOR_PROLOGUE_2
+          begin_coloring_char(r,&d,e,ebcdic);
 #if defined(__MVS__) && __CHARSET_LIB == 0
           if (e >= 64)
-            l[c++] = e;
+            r[d++] = e;
           else
-            l[c++] = '.';
+            r[d++] = '.';
 #else
           if (ebcdic)
             e = (e < 64) ? '.' : etoa64[e-64];
-          l[c++] = (e > 31 && e < 127) ? e : '.';
+          r[d++] = (e > 31 && e < 127) ? e : '.';
 #endif
-          COLOR_EPILOGUE
+          COLOR_EPILOGUE_2
         }
       else /*no colors*/
         {
           if (ebcdic)
             e = (e < 64) ? '.' : etoa64[e-64];
 
-          if (hextype == HEX_LITTLEENDIAN)
-            c -= 1;
-
-          c += addrlen + 3 + p;
-          l[c++] =
+          r[d++] =
 #if defined(__MVS__) && __CHARSET_LIB == 0
               (e >= 64)
 #else
@@ -1145,59 +1182,62 @@ main(int argc, char *argv[])
         n++;
         if (++p == cols)
           {
-            l[c++] = '\n';
             l[c] = '\0';
-            xxdline(fpo, l, autoskip ? nonzero : 1);
+            r[d++] = '\n';
+            r[d] = '\0';
+
+            xxdline(fpo, l,r, autoskip ? nonzero : 1);
             nonzero = 0;
             p = 0;
           }
     }
   if (p)
     {
-      l[c++] = '\n';
-      l[c] = '\0';
-      if (color)
+      if (hextype == HEX_LITTLEENDIAN)
         {
-          x = p;
-          if (hextype == HEX_LITTLEENDIAN)
-            {
-              int fill = octspergrp - (p % octspergrp);
-              if (fill == octspergrp) fill = 0;
-
-              c = addrlen + 1 + (grplen * (x - (octspergrp-fill))) / octspergrp;
-
-              for (i = 0; i < fill;i++)
-                {
-                  COLOR_PROLOGUE
-                  l[c++] = COLOR_RED;
-                  l[c++] = 'm';
-                  l[c++] = ' '; /* empty space */
-                  COLOR_EPILOGUE
-                  x++;
-                  p++;
-                }
-            }
-
-          if (hextype != HEX_BITS)
-            {
-              c = addrlen + 1 + (grplen * x) / octspergrp;
-              c += cols - p;
-              c += (cols - p) / octspergrp;
-
-              for (i = cols - p; i > 0;i--)
-                {
-                  COLOR_PROLOGUE
-                  l[c++] = COLOR_RED;
-                  l[c++] = 'm';
-                  l[c++] = ' '; /* empty space */
-                  COLOR_EPILOGUE
-                }
-            }
+        //TODO
+        // -R always -e => not working
         }
-      xxdline(fpo, l, 1);
+      else
+        {
+        //how many groups will fit in one line
+        int number_of_groups = cols / octspergrp;
+        if (number_of_groups * octspergrp < cols) //rounding up
+          number_of_groups++;
+
+        int used_groups = p / octspergrp; //rouding up
+        if (used_groups * octspergrp < p)
+          used_groups++;
+
+        int total_width;
+        total_width = addrlen;
+        if (hextype == HEX_BITS)
+          total_width += cols * 8;
+        else
+          total_width += cols * 2;
+        total_width += number_of_groups; //each group needs one whitespace
+
+        int used_width;
+        used_width = addrlen;
+        if (hextype == HEX_BITS)
+          used_width += p * 8;
+        else
+          used_width += p * 2;
+        used_width += used_groups;
+
+        for (i = 0; i < total_width-used_width; i++)
+          l[c++] = ' ';
+        }
+
+      l[c] = '\0';
+      r[d++] = '\n';
+      r[d] = '\0';
+
+      xxdline(fpo, l,r, 1);
     }
+
   else if (autoskip)
-    xxdline(fpo, l, -1);	/* last chance to flush out suppressed lines */
+    xxdline(fpo, l,r, -1);	/* last chance to flush out suppressed lines */
 
   fclose_or_die(fp, fpo);
   return 0;
